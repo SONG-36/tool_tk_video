@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import multipart from "@fastify/multipart";
 
 import { registerAssetRoutes } from "./api/assetRoutes.js";
+import { registerPipelineRoutes } from "./api/pipelineRoutes.js";
 import { registerProductRoutes } from "./api/productRoutes.js";
 import { registerProjectRoutes } from "./api/projectRoutes.js";
 
@@ -10,6 +11,7 @@ export function registerCoreRoutes(app: FastifyInstance): void {
   registerProjectRoutes(app);
   registerProductRoutes(app);
   registerAssetRoutes(app);
+  registerPipelineRoutes(app);
 }
 
 export function buildApp(): FastifyInstance {
