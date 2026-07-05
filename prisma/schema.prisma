@@ -1,0 +1,350 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProjectStatus {
+  draft
+  ready
+  processing
+  needs_user_input
+  completed
+  failed
+}
+
+enum ProjectCurrentStep {
+  project_created
+  asset_understanding
+  asset_gap_detecting
+  trend_structuring
+  script_generating
+  shot_breaking_down
+  shot_classifying
+  prompt_generating
+  exporting
+  completed
+  failed
+}
+
+enum AssetType {
+  product_image
+  product_video
+  usage_video
+  hand_demo_video
+  lifestyle_image
+  lifestyle_video
+  packaging_image
+  logo
+  competitor_ad
+  reference_video
+}
+
+enum AssetStatus {
+  uploaded
+  processing
+  analyzed
+  failed
+}
+
+enum RiskLevel {
+  low
+  medium
+  high
+  blocking
+}
+
+enum ShotType {
+  REAL
+  AI
+  HYBRID
+  PRODUCT
+  TEXT
+}
+
+enum VideoModel {
+  kling
+  seedance
+  jimeng
+}
+
+enum TaskType {
+  asset_understanding
+  asset_gap_detection
+  trend_structuring
+  script_generation
+  shot_breakdown
+  shot_classification
+  model_prompt_generation
+  export_assembly
+}
+
+enum TaskRunStatus {
+  pending
+  queued
+  processing
+  success
+  failed
+  retrying
+  needs_user_input
+  cancelled
+}
+
+model User {
+  id             String  @id @default(cuid())
+  projects       Project[]
+  uploaded_assets Asset[]
+}
+
+model Project {
+  id              String             @id @default(cuid())
+  user_id         String
+  name            String
+  status          ProjectStatus      @default(draft)
+  target_platform String             @default("TikTok")
+  target_market   String
+  target_language String             @default("English")
+  objective       String             @default("conversion")
+  current_step    ProjectCurrentStep @default(project_created)
+  created_at      DateTime           @default(now())
+  updated_at      DateTime           @updatedAt
+
+  user             User             @relation(fields: [user_id], references: [id])
+  product          Product?
+  assets           Asset[]
+  asset_gap_reports AssetGapReport[]
+  trend_insight    TrendInsight?
+  scripts          Script[]
+  shots            Shot[]
+  model_prompts    ModelPrompt[]
+  export_packages  ExportPackage[]
+  task_runs        TaskRun[]
+
+  @@index([user_id])
+}
+
+model Product {
+  id              String   @id @default(cuid())
+  project_id      String   @unique
+  name            String
+  category        String
+  description     String
+  selling_points  String[]
+  target_audience String?
+  usage_scenarios String[]
+  price           Decimal?
+  currency        String?
+  product_url     String?
+  sku_code        String?
+  brand_name      String?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  project Project @relation(fields: [project_id], references: [id])
+}
+
+model Asset {
+  id           String      @id @default(cuid())
+  project_id   String
+  uploaded_by  String
+  asset_type   AssetType
+  file_name    String
+  file_url     String
+  file_size    Int
+  mime_type    String
+  duration     Int?
+  width        Int?
+  height       Int?
+  aspect_ratio String?
+  source       String?
+  status       AssetStatus @default(uploaded)
+  created_at   DateTime    @default(now())
+
+  project        Project        @relation(fields: [project_id], references: [id])
+  uploaded_user  User           @relation(fields: [uploaded_by], references: [id])
+  asset_analysis AssetAnalysis?
+
+  @@index([project_id])
+  @@index([uploaded_by])
+}
+
+model AssetAnalysis {
+  id               String   @id @default(cuid())
+  asset_id         String   @unique
+  project_id       String
+  detected_objects String[]
+  detected_people  Boolean
+  detected_hands   Boolean
+  detected_product Boolean
+  scene_type       String?
+  quality_score    Float?
+  usability_score  Float?
+  possible_usage   String[]
+  limitations      String[]
+  created_at       DateTime @default(now())
+
+  asset   Asset   @relation(fields: [asset_id], references: [id])
+  project Project @relation(fields: [project_id], references: [id])
+
+  @@index([project_id])
+}
+
+model AssetGapReport {
+  id                       String    @id @default(cuid())
+  project_id               String
+  stage                    String
+  missing_assets           String[]
+  available_assets         String[]
+  risk_level               RiskLevel
+  ai_substitution_possible Boolean
+  recommendations          String[]
+  created_at               DateTime  @default(now())
+
+  project Project @relation(fields: [project_id], references: [id])
+
+  @@unique([project_id, stage])
+  @@index([project_id])
+}
+
+model TrendInsight {
+  id                 String   @id @default(cuid())
+  project_id         String   @unique
+  hook_patterns      String[]
+  content_structures String[]
+  pacing_patterns    String[]
+  emotional_angles   String[]
+  visual_patterns    String[]
+  ad_formulas        String[]
+  trend_source       String
+  source_text        String?
+  reference_links    String[]
+  is_fallback        Boolean
+  summary            String?
+  created_at         DateTime @default(now())
+
+  project Project  @relation(fields: [project_id], references: [id])
+  scripts Script[]
+}
+
+model Script {
+  id                 String   @id @default(cuid())
+  project_id         String
+  trend_insight_id   String
+  title              String
+  creative_angle     String
+  target_emotion     String?
+  target_audience    String?
+  hook               String
+  main_message       String
+  voiceover          String
+  subtitles          String
+  cta                String
+  estimated_duration Int
+  required_assets    String[]
+  risk_notes         String[]
+  status             String   @default("generated")
+  created_at         DateTime @default(now())
+
+  project       Project      @relation(fields: [project_id], references: [id])
+  trend_insight TrendInsight @relation(fields: [trend_insight_id], references: [id])
+  shots         Shot[]
+  model_prompts ModelPrompt[]
+
+  @@index([project_id])
+  @@index([trend_insight_id])
+}
+
+model Shot {
+  id                   String    @id @default(cuid())
+  project_id           String
+  script_id            String
+  order_index          Int
+  duration             Int
+  visual               String
+  action               String
+  voiceover            String?
+  subtitle             String
+  shot_type            ShotType
+  asset_dependency     String[]
+  missing_asset_types  String[]
+  ai_fallback_possible Boolean
+  realism_risk         RiskLevel
+  recommendation       String?
+  camera_motion        String?
+  scene                String?
+  purpose              String
+  created_at           DateTime  @default(now())
+
+  project       Project       @relation(fields: [project_id], references: [id])
+  script        Script        @relation(fields: [script_id], references: [id])
+  model_prompts ModelPrompt[]
+
+  @@unique([script_id, order_index])
+  @@index([project_id])
+  @@index([script_id])
+}
+
+model ModelPrompt {
+  id                 String     @id @default(cuid())
+  project_id         String
+  script_id          String
+  shot_id            String
+  model              VideoModel
+  prompt             String
+  negative_prompt    String?
+  aspect_ratio       String      @default("9:16")
+  duration           Int
+  camera_motion      String?
+  scene_description  String?
+  visual_style       String?
+  motion_description String?
+  asset_reference    Json?
+  generation_notes   String?
+  created_at         DateTime    @default(now())
+
+  project Project @relation(fields: [project_id], references: [id])
+  script  Script  @relation(fields: [script_id], references: [id])
+  shot    Shot    @relation(fields: [shot_id], references: [id])
+
+  @@unique([shot_id, model])
+  @@index([project_id])
+  @@index([script_id])
+  @@index([shot_id])
+}
+
+model ExportPackage {
+  id             String   @id @default(cuid())
+  project_id     String
+  status         String   @default("pending")
+  file_url       String?
+  included_files String[]
+  error_message  String?
+  created_at     DateTime @default(now())
+  completed_at   DateTime?
+
+  project Project @relation(fields: [project_id], references: [id])
+
+  @@index([project_id])
+}
+
+model TaskRun {
+  id            String        @id @default(cuid())
+  project_id    String
+  task_type     TaskType
+  status        TaskRunStatus @default(pending)
+  input_ref     Json?
+  output_ref    Json?
+  error_message String?
+  retry_count   Int           @default(0)
+  started_at    DateTime?
+  completed_at  DateTime?
+  created_at    DateTime      @default(now())
+
+  project Project @relation(fields: [project_id], references: [id])
+
+  @@index([project_id])
+  @@index([task_type])
+}
