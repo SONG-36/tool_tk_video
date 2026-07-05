@@ -115,6 +115,7 @@ model Project {
   user             User             @relation(fields: [user_id], references: [id])
   product          Product?
   assets           Asset[]
+  asset_analyses   AssetAnalysis[]
   asset_gap_reports AssetGapReport[]
   trend_insight    TrendInsight?
   scripts          Script[]
