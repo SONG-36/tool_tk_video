@@ -1,5 +1,3 @@
-# AI短视频广告生成系统｜Codex Execution Plan 画布 v1
-
 ## 执行前提
 
 默认技术栈：
