@@ -3,6 +3,8 @@ import {
   markTaskRunProcessing,
   markTaskRunSuccess,
 } from "../repositories/taskRunRepository.js";
+import { advanceAfterTaskSuccess } from "../pipeline/advancePipeline.js";
+import type { TaskPayload } from "../queue/queueClient.js";
 import { isAppError } from "../utils/errors.js";
 
 type TaskOutputRef = Parameters<typeof markTaskRunSuccess>[1];
@@ -16,6 +18,7 @@ interface TaskRunnerDependencies {
   markTaskRunProcessing?: typeof markTaskRunProcessing;
   markTaskRunSuccess?: typeof markTaskRunSuccess;
   markTaskRunFailed?: typeof markTaskRunFailed;
+  advanceAfterTaskSuccess?: typeof advanceAfterTaskSuccess;
 }
 
 function getReadableErrorMessage(error: unknown): string {
@@ -34,6 +37,23 @@ function getReadableErrorMessage(error: unknown): string {
   return "Unknown Worker handler error";
 }
 
+function getAdvancePayload(input: unknown): TaskPayload | undefined {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return undefined;
+  }
+
+  const payload = (input as Record<string, unknown>).payload;
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    Array.isArray(payload)
+  ) {
+    return undefined;
+  }
+
+  return payload as TaskPayload;
+}
+
 export async function runTaskWithStatus<
   TInput,
   TOutput extends TaskOutputRef,
@@ -47,15 +67,14 @@ export async function runTaskWithStatus<
     dependencies.markTaskRunProcessing ?? markTaskRunProcessing;
   const markSuccess = dependencies.markTaskRunSuccess ?? markTaskRunSuccess;
   const markFailed = dependencies.markTaskRunFailed ?? markTaskRunFailed;
+  const advance =
+    dependencies.advanceAfterTaskSuccess ?? advanceAfterTaskSuccess;
 
-  await markProcessing(taskRunId);
+  const taskRun = await markProcessing(taskRunId);
 
+  let output: TOutput;
   try {
-    const output = await handler(input);
-
-    await markSuccess(taskRunId, output);
-
-    return output;
+    output = await handler(input);
   } catch (error) {
     const errorMessage = getReadableErrorMessage(error);
 
@@ -70,4 +89,36 @@ export async function runTaskWithStatus<
 
     throw error;
   }
+
+  try {
+    await markSuccess(taskRunId, output);
+  } catch (error) {
+    const errorMessage = getReadableErrorMessage(error);
+
+    try {
+      await markFailed(taskRunId, errorMessage);
+    } catch (markFailedError) {
+      throw new AggregateError(
+        [error, markFailedError],
+        `TaskRun ${taskRunId} could not be marked success or failed`,
+      );
+    }
+
+    throw error;
+  }
+
+  try {
+    await advance({
+      project_id: taskRun.project_id,
+      completed_task_type: taskRun.task_type,
+      payload: getAdvancePayload(input),
+    });
+  } catch (error) {
+    throw new Error(
+      `TaskRun ${taskRunId} succeeded but Pipeline advancement failed`,
+      { cause: error },
+    );
+  }
+
+  return output;
 }

@@ -7,11 +7,22 @@ import {
 } from "../repositories/projectRepository.js";
 import { enqueuePipelineStep } from "../pipeline/orchestrator.js";
 import { getFirstPipelineStep } from "../pipeline/pipelineSteps.js";
+import {
+  retryFailedTask,
+  type RetryFailedTaskInput,
+} from "../pipeline/retryTask.js";
+import { findTaskRunById } from "../repositories/taskRunRepository.js";
 import { createAppError } from "../utils/errors.js";
 
 export interface StartPipelineInput {
   project_id: string;
   user_id: string;
+}
+
+export interface RetryPipelineTaskInput {
+  user_id: string;
+  project_id: string;
+  task_run_id: string;
 }
 
 interface PipelineServiceDependencies {
@@ -21,6 +32,10 @@ interface PipelineServiceDependencies {
   updateProjectStatus?: typeof updateProjectStatus;
   updateProjectCurrentStep?: typeof updateProjectCurrentStep;
   enqueuePipelineStep?: typeof enqueuePipelineStep;
+  findTaskRunById?: typeof findTaskRunById;
+  retryFailedTask?: (
+    input: RetryFailedTaskInput,
+  ) => ReturnType<typeof retryFailedTask>;
 }
 
 function requireText(value: string, fieldName: string): void {
@@ -104,5 +119,57 @@ export async function startPipeline(
     payload: {
       requested_by: input.user_id,
     },
+  });
+}
+
+export async function retryPipelineTask(
+  input: RetryPipelineTaskInput,
+  dependencies: PipelineServiceDependencies = {},
+) {
+  requireText(input.user_id, "user_id");
+  requireText(input.project_id, "project_id");
+  requireText(input.task_run_id, "task_run_id");
+
+  const getProject = dependencies.findProjectById ?? findProjectById;
+  const getTaskRun = dependencies.findTaskRunById ?? findTaskRunById;
+  const retryTask = dependencies.retryFailedTask ?? retryFailedTask;
+
+  const project = await getProject(input.project_id);
+  if (!project) {
+    throw createAppError({
+      errorCode: "PROJECT_NOT_FOUND",
+      message: "Project not found",
+      statusCode: 404,
+    });
+  }
+
+  if (project.user_id !== input.user_id) {
+    throw createAppError({
+      errorCode: "PROJECT_ACCESS_DENIED",
+      message: "user_id does not own this Project",
+      statusCode: 403,
+    });
+  }
+
+  const taskRun = await getTaskRun(input.task_run_id);
+  if (!taskRun) {
+    throw createAppError({
+      errorCode: "TASK_RUN_NOT_FOUND",
+      message: "TaskRun not found",
+      statusCode: 404,
+    });
+  }
+
+  if (taskRun.project_id !== input.project_id) {
+    throw createAppError({
+      errorCode: "TASK_RUN_PROJECT_MISMATCH",
+      message: "TaskRun does not belong to this Project",
+      statusCode: 403,
+    });
+  }
+
+  return retryTask({
+    task_run_id: input.task_run_id,
+    project_id: input.project_id,
   });
 }
